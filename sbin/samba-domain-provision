@@ -3,6 +3,34 @@
 # Exit if any error
 set -euo pipefail
 
+SMB_CONF="/etc/samba/smb.conf"
+
+for var in $(printenv | grep '^SMB__'); do
+    # Extrait le nom de la variable et sa valeur
+    VAR_NAME="${var%=*}"
+    VAR_VALUE="${var#*=}"
+
+    # Transformez le nom de la variable en nom de section et de paramètre smb.conf
+    VAR_NAME="${VAR_NAME#SMB__}"
+    SECTION_NAME="$(echo "$VAR_NAME" | cut -d'__' -f1)"
+    PARAM_NAME="$(echo "$VAR_NAME" | cut -d'__' -f2- | tr '[:upper:]' '[:lower:]' | tr '_' ' ')"
+
+    # Vérifiez si la section existe déjà dans smb.conf
+    if ! grep -q "^\[$SECTION_NAME\]" $SMB_CONF; then
+        # Si non, ajoutez la section à smb.conf
+        echo -e "\n[$SECTION_NAME]" >> $SMB_CONF
+    fi
+
+    # Vérifiez si le paramètre existe déjà dans la section de smb.conf
+    if awk -v section="[$SECTION_NAME]" -v param="$PARAM_NAME" '$0 == section {p=1} p && $0 ~ param {$0 = param" = '$VAR_VALUE'"; p=0} 1' $SMB_CONF > /tmp/smb.conf.tmp; then
+        # Si oui, modifiez la valeur existante
+        mv /tmp/smb.conf.tmp $SMB_CONF
+    else
+        # Sinon, ajoutez le paramètre et la valeur à la section dans smb.conf
+        echo "$PARAM_NAME = $VAR_VALUE" >> $SMB_CONF
+    fi
+done
+
 # Skip domain provision if secrets exists
 if [[ ! -e "${SAMBA_PATH:-/usr/local/samba}/private/secrets.keytab" ]]; then
 
